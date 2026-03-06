@@ -1,0 +1,6 @@
+[build]
+builder = "RAILPACK"
+
+[deploy]
+startCommand = "npm run worker:feed-refresh"
+restartPolicyType = "NEVER"

@@ -5,6 +5,7 @@ This repository contains the planning and backend foundation for an RSS reader w
 Contents:
 
 - `rss-reader-api`: Fastify + TypeScript backend with PostgreSQL repository adapters
+- `rss-reader-feed-refresh`: deployable Railway cron worker for feed refresh jobs
 - `rss-reader-db`: PostgreSQL schema, migrations, seeds, fixtures, and query pack
 - `rss-reader-backend-spec`: API contracts, route map, service flows, and worker flows
 - `RAILWAY.md`: Railway deployment notes for this repo

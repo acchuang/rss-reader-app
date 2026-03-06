@@ -3,8 +3,8 @@
 This repo is ready for a basic Railway deployment with:
 
 - one `api` service from `/rss-reader-api`
+- one `feed-refresh` cron service from `/rss-reader-feed-refresh`
 - one PostgreSQL service
-- one optional `feed-refresh` cron service from `/rss-reader-api`
 
 This is suitable for development and early internal use. It is not yet production-grade because OPML imports and immediate background jobs still use an in-process queue.
 
@@ -43,10 +43,8 @@ Use Railway's provided `DATABASE_URL` for the API service.
 
 Create a second service from the same GitHub repo and configure:
 
-- Root Directory: `/rss-reader-api`
-- Config as Code path: `/rss-reader-api/railway.worker.toml`
-- Start Command: `npm run worker:feed-refresh`
-- Cron Schedule: `*/30 * * * *`
+- Root Directory: `/rss-reader-feed-refresh`
+- Config as Code path: `/rss-reader-feed-refresh/railway.toml`
 
 Railway cron jobs run in UTC and should terminate as soon as the task finishes. The worker in this repo closes the Postgres pool and exits after one pass.
 
