@@ -1,4 +1,5 @@
 import { createServices } from '../lib/container.js';
+import { closePool } from '../lib/db.js';
 
 async function main(): Promise<void> {
   const importId = process.env.IMPORT_ID;
@@ -11,6 +12,7 @@ async function main(): Promise<void> {
 
   const services = createServices();
   await services.opmlImportWorker.process({ importId, userId, uploadPath });
+  await closePool();
   process.stdout.write('OPML import processed\n');
 }
 
