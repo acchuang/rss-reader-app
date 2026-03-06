@@ -1,10 +1,5 @@
 [build]
 builder = "RAILPACK"
-watchPatterns = [
-  "/rss-reader-api/**",
-  "/rss-reader-db/**",
-  "/rss-reader-backend-spec/**"
-]
 
 [deploy]
 startCommand = "npm run worker:feed-refresh"
