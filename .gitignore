@@ -1,0 +1,4 @@
+.DS_Store
+rss-reader-api/node_modules
+rss-reader-api/dist
+rss-reader-api/.env
