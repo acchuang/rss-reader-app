@@ -11,6 +11,7 @@
     "worker:opml-import": "tsx src/workers/runOpmlImportWorker.ts"
   },
   "dependencies": {
+    "@fastify/cors": "^11.0.0",
     "fast-xml-parser": "^4.5.3",
     "fastify": "^5.2.1",
     "pg": "^8.13.3",

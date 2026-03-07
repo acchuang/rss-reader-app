@@ -4,6 +4,7 @@ This repo is ready for a basic Railway deployment with:
 
 - one `api` service from `/rss-reader-api`
 - one `feed-refresh` cron service from `/rss-reader-feed-refresh`
+- one `web` service from `/rss-reader-web`
 - one PostgreSQL service
 
 This is suitable for development and early internal use. It is not yet production-grade because OPML imports and immediate background jobs still use an in-process queue.
@@ -34,13 +35,24 @@ The API exposes:
 
 - healthcheck: `/health`
 
-### 2. PostgreSQL service
+### 2. Web service
+
+Create a Railway service from the GitHub repo and configure:
+
+- Root Directory: `/rss-reader-web`
+- Config as Code path: `/rss-reader-web/railway.toml`
+
+The current frontend defaults to the live Railway API URL baked into the app. If that changes later, set:
+
+- `VITE_API_BASE_URL`
+
+### 3. PostgreSQL service
 
 Add Railway PostgreSQL to the same project.
 
 Use Railway's provided `DATABASE_URL` for the API service.
 
-### 3. Feed refresh cron service
+### 4. Feed refresh cron service
 
 Create a second service from the same GitHub repo and configure:
 

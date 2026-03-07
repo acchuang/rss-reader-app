@@ -1,3 +1,4 @@
+import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import { ZodError } from 'zod';
 
@@ -17,6 +18,9 @@ export async function buildApp() {
 
   const services = createServices();
 
+  await app.register(cors, {
+    origin: true
+  });
   await app.register(requestContextPlugin);
   await registerRoutes(app, services);
 

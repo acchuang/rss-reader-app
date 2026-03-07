@@ -2,3 +2,9 @@
 rss-reader-api/node_modules
 rss-reader-api/dist
 rss-reader-api/.env
+rss-reader-web/node_modules
+rss-reader-web/dist
+rss-reader-web/.env
+rss-reader-feed-refresh/node_modules
+rss-reader-feed-refresh/dist
+rss-reader-feed-refresh/.env
