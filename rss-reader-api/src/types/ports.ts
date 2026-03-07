@@ -24,6 +24,7 @@ export interface FolderRepository {
 
 export interface SubscriptionRepository {
   listByUser(userId: UUID): Promise<SubscriptionDto[]>;
+  getById(userId: UUID, subscriptionId: UUID): Promise<SubscriptionDto | null>;
   upsertFromValidatedFeed(input: {
     userId: UUID;
     feedId: UUID;

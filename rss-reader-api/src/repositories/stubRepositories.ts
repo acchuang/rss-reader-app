@@ -18,6 +18,7 @@ export function createStubDependencies(): ServiceDependencies {
     },
     subscriptions: {
       listByUser: async () => notImplemented('SubscriptionRepository.listByUser'),
+      getById: async () => notImplemented('SubscriptionRepository.getById'),
       upsertFromValidatedFeed: async () => notImplemented('SubscriptionRepository.upsertFromValidatedFeed'),
       update: async () => notImplemented('SubscriptionRepository.update'),
       delete: async () => notImplemented('SubscriptionRepository.delete'),

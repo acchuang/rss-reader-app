@@ -9,6 +9,39 @@ function nextPollIso(minutesFromNow: number): string {
 export class FeedRefreshWorkerService {
   constructor(private readonly deps: ServiceDependencies) {}
 
+  async refreshDueFeeds(input?: { maxFeeds?: number }): Promise<{
+    processedCount: number;
+    failedCount: number;
+    feedIds: string[];
+  }> {
+    const maxFeeds = Math.max(1, input?.maxFeeds ?? 50);
+    const feedIds: string[] = [];
+    let processedCount = 0;
+    let failedCount = 0;
+
+    for (let index = 0; index < maxFeeds; index += 1) {
+      const nextFeed = await this.deps.feeds.claimNextDueFeed();
+      if (!nextFeed) {
+        break;
+      }
+
+      try {
+        await this.refreshFeed(nextFeed.id);
+        processedCount += 1;
+        feedIds.push(nextFeed.id);
+      } catch {
+        failedCount += 1;
+        feedIds.push(nextFeed.id);
+      }
+    }
+
+    return {
+      processedCount,
+      failedCount,
+      feedIds
+    };
+  }
+
   async refreshNextDueFeed(): Promise<{ processed: boolean; feedId?: string }> {
     const feed = await this.deps.feeds.claimNextDueFeed();
     if (!feed) {

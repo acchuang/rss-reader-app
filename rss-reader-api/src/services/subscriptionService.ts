@@ -9,6 +9,15 @@ export class SubscriptionService {
     return this.deps.subscriptions.listByUser(userId);
   }
 
+  async getById(userId: string, subscriptionId: string): Promise<SubscriptionDto> {
+    const subscription = await this.deps.subscriptions.getById(userId, subscriptionId);
+    if (!subscription) {
+      throw new NotFoundError('Subscription not found');
+    }
+
+    return subscription;
+  }
+
   async create(
     userId: string,
     input: { url: string; folderId?: string | null; titleOverride?: string | null }

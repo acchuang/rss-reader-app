@@ -98,6 +98,13 @@ type ImportStatusResponse = {
   errorMessage: string | null;
 };
 
+type RefreshSourceResponse = {
+  refreshed: boolean;
+  subscriptionId: string;
+  feedId: string;
+  processed: boolean;
+};
+
 type ViewMode = 'unread' | 'saved';
 type Scope =
   | { kind: 'home' }
@@ -249,6 +256,7 @@ export function App() {
   const [opmlFileName, setOpmlFileName] = useState<string | null>(null);
   const [importingOpml, setImportingOpml] = useState(false);
   const [importStatus, setImportStatus] = useState<ImportStatusResponse | null>(null);
+  const [refreshingSubscriptionId, setRefreshingSubscriptionId] = useState<string | null>(null);
   const [sourceNotice, setSourceNotice] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -787,11 +795,41 @@ export function App() {
     }
   }
 
+  async function handleRefreshSource(subscriptionId: string, title: string) {
+    setRefreshingSubscriptionId(subscriptionId);
+    setSourceNotice(null);
+
+    try {
+      await fetchJson<RefreshSourceResponse>(`${API_BASE_URL}/api/subscriptions/${subscriptionId}/refresh`, {
+        method: 'POST',
+        body: '{}'
+      });
+      await refreshReaderSurface(viewMode, scope);
+      setSourceNotice({
+        tone: 'success',
+        message: `${title} refreshed. New entries will appear in the current lane if any were fetched.`
+      });
+    } catch (caughtError) {
+      setSourceNotice({
+        tone: 'error',
+        message: caughtError instanceof Error ? caughtError.message : `Unable to refresh ${title}`
+      });
+    } finally {
+      setRefreshingSubscriptionId(null);
+    }
+  }
+
   const groupedFeeds = (sidebar?.folders ?? []).map((folder) => ({
     ...folder,
     feeds: (sidebar?.feeds ?? []).filter((feed) => feed.folderId === folder.id)
   }));
   const rootFeeds = (sidebar?.feeds ?? []).filter((feed) => feed.folderId === null);
+  const activeSubscription =
+    scope.kind === 'feed'
+      ? subscriptions.find((entry) => entry.id === scope.subscriptionId) ?? null
+      : selectedArticle
+        ? subscriptions.find((entry) => entry.feed.id === selectedArticle.feed.id) ?? null
+        : null;
 
   return (
     <div className="shell shell--editorial">
@@ -1027,8 +1065,18 @@ export function App() {
                 </div>
               </header>
 
-              <div className="detail-toolbar detail-toolbar--actions">
+                <div className="detail-toolbar detail-toolbar--actions">
                 <div className="detail-toolbar__group">
+                  {activeSubscription ? (
+                    <button
+                      className="utility-button"
+                      disabled={refreshingSubscriptionId === activeSubscription.id}
+                      onClick={() => void handleRefreshSource(activeSubscription.id, activeSubscription.titleOverride ?? activeSubscription.feed.title ?? 'Source')}
+                      type="button"
+                    >
+                      {refreshingSubscriptionId === activeSubscription.id ? 'Refreshing source…' : 'Refresh source'}
+                    </button>
+                  ) : null}
                   <button
                     className="utility-button"
                     disabled={Boolean(pendingMap[selectedArticle.id])}
@@ -1244,9 +1292,19 @@ export function App() {
                   <strong>{subscription.titleOverride ?? subscription.feed.title ?? 'Untitled feed'}</strong>
                   <p>{subscription.feed.feedUrl}</p>
                 </div>
-                <div className="source-card__meta">
-                  <span data-status={subscription.feed.status}>{statusLabel(subscription.feed.status)}</span>
-                  <em>{folderLookup.get(subscription.folderId ?? '') ?? 'No folder'}</em>
+                <div className="source-card__actions source-card__actions--ledger">
+                  <div className="source-card__meta">
+                    <span data-status={subscription.feed.status}>{statusLabel(subscription.feed.status)}</span>
+                    <em>{folderLookup.get(subscription.folderId ?? '') ?? 'No folder'}</em>
+                  </div>
+                  <button
+                    className="icon-button"
+                    disabled={refreshingSubscriptionId === subscription.id}
+                    onClick={() => void handleRefreshSource(subscription.id, subscription.titleOverride ?? subscription.feed.title ?? 'Source')}
+                    type="button"
+                  >
+                    {refreshingSubscriptionId === subscription.id ? 'Refreshing…' : 'Refresh'}
+                  </button>
                 </div>
               </article>
             ))}

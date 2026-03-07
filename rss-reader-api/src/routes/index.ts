@@ -60,6 +60,19 @@ export async function registerRoutes(app: FastifyInstance, services: AppServices
     return services.subscriptions.delete(userId, params.subscriptionId);
   });
 
+  app.post('/api/subscriptions/:subscriptionId/refresh', async (request) => {
+    const userId = requireUserId(request);
+    const params = subscriptionParamsSchema.parse(request.params);
+    const subscription = await services.subscriptions.getById(userId, params.subscriptionId);
+    const result = await services.feedRefreshWorker.refreshFeed(subscription.feed.id);
+
+    return {
+      refreshed: true,
+      subscriptionId: subscription.id,
+      ...result
+    };
+  });
+
   app.get('/api/articles', async (request) => {
     const userId = requireUserId(request);
     const query = articleListQuerySchema.parse(request.query);

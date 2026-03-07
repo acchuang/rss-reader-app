@@ -719,6 +719,11 @@ textarea {
   justify-content: flex-end;
 }
 
+.source-card__actions--ledger {
+  justify-content: flex-end;
+  align-items: center;
+}
+
 .source-card__meta span[data-status='degraded'],
 .source-card__meta span[data-status='failing'] {
   background: rgba(207, 92, 49, 0.14);

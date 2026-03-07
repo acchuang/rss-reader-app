@@ -228,6 +228,29 @@ class PostgresSubscriptionRepository implements SubscriptionRepository {
     return result.rows.map(mapSubscription);
   }
 
+  async getById(userId: UUID, subscriptionId: UUID): Promise<SubscriptionDto | null> {
+    const result = await this.db.query(
+      `select
+         s.id,
+         s.folder_id,
+         s.title_override,
+         s.created_at,
+         s.updated_at,
+         f.id as feed_id,
+         f.title as feed_title,
+         f.feed_url,
+         f.site_url,
+         f.status
+       from subscriptions s
+       join feeds f on f.id = s.feed_id
+       where s.user_id = $1 and s.id = $2
+       limit 1`,
+      [userId, subscriptionId]
+    );
+
+    return result.rows[0] ? mapSubscription(result.rows[0]) : null;
+  }
+
   async upsertFromValidatedFeed(input: {
     userId: UUID;
     feedId: UUID;
