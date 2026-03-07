@@ -45,8 +45,15 @@ function walkOutlines(
 }
 
 export class OpmlFileParser implements OpmlParserPort {
-  async parse(uploadPath: string): Promise<Array<{ xmlUrl: string; title?: string; folderName?: string }>> {
-    const xml = await readFile(uploadPath, 'utf8');
+  async parse(input: {
+    uploadPath?: string;
+    opmlContent?: string;
+  }): Promise<Array<{ xmlUrl: string; title?: string; folderName?: string }>> {
+    const xml = input.opmlContent ?? (input.uploadPath ? await readFile(input.uploadPath, 'utf8') : null);
+    if (!xml) {
+      throw new Error('OPML content or upload path is required');
+    }
+
     const parser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: '',

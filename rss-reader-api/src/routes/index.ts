@@ -1,9 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 
-import { ValidationError } from '../lib/errors.js';
 import type { AppServices } from '../lib/container.js';
 import { requireUserId } from '../lib/auth.js';
-import { articleParamsSchema, articleListQuerySchema, bulkMarkReadSchema, createFolderSchema, createSubscriptionSchema, folderParamsSchema, importStatusParamsSchema, searchQuerySchema, subscriptionParamsSchema, updateFolderSchema, updateSubscriptionSchema } from '../validation/schemas.js';
+import { articleParamsSchema, articleListQuerySchema, bulkMarkReadSchema, createFolderSchema, createOpmlImportSchema, createSubscriptionSchema, folderParamsSchema, importStatusParamsSchema, searchQuerySchema, subscriptionParamsSchema, updateFolderSchema, updateSubscriptionSchema } from '../validation/schemas.js';
 
 export async function registerRoutes(app: FastifyInstance, services: AppServices): Promise<void> {
   app.get('/health', async () => ({ ok: true }));
@@ -134,11 +133,11 @@ export async function registerRoutes(app: FastifyInstance, services: AppServices
 
   app.post('/api/imports/opml', async (request) => {
     const userId = requireUserId(request);
-    const body = request.body as { uploadPath?: string } | null;
-    if (!body?.uploadPath) {
-      throw new ValidationError('uploadPath is required for the scaffolded OPML import endpoint');
-    }
-    return services.imports.createOpmlImport(userId, { uploadPath: body.uploadPath });
+    const body = createOpmlImportSchema.parse(request.body);
+    return services.imports.createOpmlImport(userId, {
+      uploadPath: body.uploadPath,
+      opmlContent: body.opmlContent
+    });
   });
 
   app.get('/api/imports/:importId', async (request) => {

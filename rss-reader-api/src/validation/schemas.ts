@@ -53,6 +53,13 @@ export const searchQuerySchema = z.object({
   cursorArticleId: uuidSchema.optional()
 });
 
+export const createOpmlImportSchema = z.object({
+  uploadPath: z.string().trim().min(1).optional(),
+  opmlContent: z.string().trim().min(1).optional()
+}).refine((value) => Boolean(value.uploadPath || value.opmlContent), {
+  message: 'uploadPath or opmlContent is required'
+});
+
 export const importStatusParamsSchema = z.object({
   importId: uuidSchema
 });

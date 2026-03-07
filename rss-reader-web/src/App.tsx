@@ -1,4 +1,5 @@
 import { startTransition, useDeferredValue, useEffect, useRef, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 
 type FeedStatus = 'active' | 'degraded' | 'failing' | 'disabled';
 
@@ -80,6 +81,21 @@ type ArticleListResponse = {
 type SearchResponse = {
   items: ArticleSummary[];
   nextCursor: { rank: number; articleId: string } | null;
+};
+
+type ImportStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+type ImportResponse = {
+  id: string;
+  status: 'pending';
+};
+
+type ImportStatusResponse = {
+  id: string;
+  status: ImportStatus;
+  totalFeeds: number;
+  feedsAdded: number;
+  errorMessage: string | null;
 };
 
 type ViewMode = 'unread' | 'saved';
@@ -174,6 +190,10 @@ function getPreviousSavedAt(article: ArticleSummary | ArticleDetail): string | n
   return 'savedAt' in article ? article.savedAt : null;
 }
 
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
@@ -184,7 +204,22 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed with ${response.status}`);
+    const contentType = response.headers.get('content-type') ?? '';
+    let message = `Request failed with ${response.status}`;
+
+    if (contentType.includes('application/json')) {
+      const payload = (await response.json()) as { message?: unknown };
+      if (typeof payload.message === 'string' && payload.message.trim()) {
+        message = payload.message;
+      }
+    } else {
+      const text = await response.text();
+      if (text.trim()) {
+        message = text.trim();
+      }
+    }
+
+    throw new Error(message);
   }
 
   return (await response.json()) as T;
@@ -206,8 +241,18 @@ export function App() {
   const [pendingMap, setPendingMap] = useState<Record<string, PendingAction | undefined>>({});
   const [bulkLoading, setBulkLoading] = useState(false);
   const [sourceDrawerOpen, setSourceDrawerOpen] = useState(false);
+  const [addFeedUrl, setAddFeedUrl] = useState('');
+  const [addFeedFolderId, setAddFeedFolderId] = useState('');
+  const [addFeedTitleOverride, setAddFeedTitleOverride] = useState('');
+  const [addingFeed, setAddingFeed] = useState(false);
+  const [opmlContent, setOpmlContent] = useState('');
+  const [opmlFileName, setOpmlFileName] = useState<string | null>(null);
+  const [importingOpml, setImportingOpml] = useState(false);
+  const [importStatus, setImportStatus] = useState<ImportStatusResponse | null>(null);
+  const [sourceNotice, setSourceNotice] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const opmlInputRef = useRef<HTMLInputElement | null>(null);
 
   const deferredSearch = useDeferredValue(searchDraft.trim());
   const visibleArticles = searchResults ?? articles;
@@ -263,6 +308,14 @@ export function App() {
       headers: {}
     });
     setSubscriptions(data);
+  }
+
+  async function refreshReaderSurface(nextViewMode = viewMode, nextScope = scope) {
+    await Promise.all([
+      refreshSidebar(),
+      refreshSubscriptions(),
+      refreshArticles(nextViewMode, nextScope)
+    ]);
   }
 
   async function refreshArticles(nextViewMode: ViewMode, nextScope: Scope) {
@@ -610,6 +663,130 @@ export function App() {
     }
   }
 
+  async function pollImportStatus(importId: string): Promise<ImportStatusResponse> {
+    let latest: ImportStatusResponse | null = null;
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      latest = await fetchJson<ImportStatusResponse>(`${API_BASE_URL}/api/imports/${importId}`);
+      setImportStatus(latest);
+
+      if (latest.status === 'completed' || latest.status === 'failed') {
+        return latest;
+      }
+
+      await sleep(700);
+    }
+
+    if (!latest) {
+      throw new Error('Unable to read import status');
+    }
+
+    return latest;
+  }
+
+  async function handleAddFeed(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAddingFeed(true);
+    setSourceNotice(null);
+
+    try {
+      const created = await fetchJson<Subscription>(`${API_BASE_URL}/api/subscriptions`, {
+        method: 'POST',
+        body: JSON.stringify({
+          url: addFeedUrl.trim(),
+          folderId: addFeedFolderId || null,
+          titleOverride: addFeedTitleOverride.trim() || null
+        })
+      });
+
+      const nextScope: Scope = {
+        kind: 'feed',
+        subscriptionId: created.id,
+        title: created.titleOverride ?? created.feed.title ?? 'New feed'
+      };
+
+      clearSearchState();
+      setViewMode('unread');
+      setScope(nextScope);
+      await refreshReaderSurface('unread', nextScope);
+
+      setAddFeedUrl('');
+      setAddFeedFolderId('');
+      setAddFeedTitleOverride('');
+      setSourceNotice({
+        tone: 'success',
+        message: 'Feed connected. Fresh entries may appear after the first refresh pass.'
+      });
+    } catch (caughtError) {
+      setSourceNotice({
+        tone: 'error',
+        message: caughtError instanceof Error ? caughtError.message : 'Unable to add feed source'
+      });
+    } finally {
+      setAddingFeed(false);
+    }
+  }
+
+  async function handleOpmlFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    const text = await file.text();
+    setOpmlContent(text);
+    setOpmlFileName(file.name);
+    setSourceNotice(null);
+  }
+
+  async function handleImportOpml(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!opmlContent.trim()) {
+      setSourceNotice({
+        tone: 'error',
+        message: 'Paste OPML XML or choose an .opml file before importing.'
+      });
+      return;
+    }
+
+    setImportingOpml(true);
+    setImportStatus(null);
+    setSourceNotice(null);
+
+    try {
+      const created = await fetchJson<ImportResponse>(`${API_BASE_URL}/api/imports/opml`, {
+        method: 'POST',
+        body: JSON.stringify({ opmlContent })
+      });
+
+      const status = await pollImportStatus(created.id);
+      if (status.status === 'failed') {
+        throw new Error(status.errorMessage ?? 'Import failed');
+      }
+
+      await refreshReaderSurface('unread', { kind: 'home' });
+      setViewMode('unread');
+      setScope({ kind: 'home' });
+      setOpmlContent('');
+      setOpmlFileName(null);
+      if (opmlInputRef.current) {
+        opmlInputRef.current.value = '';
+      }
+
+      setSourceNotice({
+        tone: 'success',
+        message: `Import finished. ${status.feedsAdded} feed(s) added${status.errorMessage ? `, ${status.errorMessage}` : ''}.`
+      });
+    } catch (caughtError) {
+      setSourceNotice({
+        tone: 'error',
+        message: caughtError instanceof Error ? caughtError.message : 'Unable to import OPML'
+      });
+    } finally {
+      setImportingOpml(false);
+    }
+  }
+
   const groupedFeeds = (sidebar?.folders ?? []).map((folder) => ({
     ...folder,
     feeds: (sidebar?.feeds ?? []).filter((feed) => feed.folderId === folder.id)
@@ -662,7 +839,7 @@ export function App() {
             </div>
 
             <button className="utility-button" onClick={() => setSourceDrawerOpen((current) => !current)} type="button">
-              {sourceDrawerOpen ? 'Hide sources' : 'Source directory'}
+              {sourceDrawerOpen ? 'Hide sources' : 'Sources & import'}
             </button>
           </div>
         </div>
@@ -918,6 +1095,95 @@ export function App() {
         </header>
 
         <div className="source-drawer__body">
+          <section className="source-cluster">
+            <h3>Add feed source</h3>
+            <form className="source-form" onSubmit={(event) => void handleAddFeed(event)}>
+              <label className="source-field">
+                <span>Feed URL or site URL</span>
+                <input
+                  onChange={(event) => setAddFeedUrl(event.target.value)}
+                  placeholder="https://example.com/feed.xml"
+                  type="url"
+                  value={addFeedUrl}
+                />
+              </label>
+
+              <div className="source-form__grid">
+                <label className="source-field">
+                  <span>Folder</span>
+                  <select value={addFeedFolderId} onChange={(event) => setAddFeedFolderId(event.target.value)}>
+                    <option value="">No folder</option>
+                    {(sidebar?.folders ?? []).map((folder) => (
+                      <option key={folder.id} value={folder.id}>
+                        {folder.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="source-field">
+                  <span>Display name</span>
+                  <input
+                    onChange={(event) => setAddFeedTitleOverride(event.target.value)}
+                    placeholder="Optional override"
+                    type="text"
+                    value={addFeedTitleOverride}
+                  />
+                </label>
+              </div>
+
+              <button className="utility-button source-form__submit" disabled={addingFeed} type="submit">
+                {addingFeed ? 'Connecting…' : 'Add source'}
+              </button>
+            </form>
+          </section>
+
+          <section className="source-cluster">
+            <h3>Import OPML</h3>
+            <form className="source-form" onSubmit={(event) => void handleImportOpml(event)}>
+              <div className="source-form__grid source-form__grid--stacked">
+                <label className="source-field">
+                  <span>Upload file</span>
+                  <input
+                    ref={opmlInputRef}
+                    accept=".opml,.xml,text/xml,application/xml"
+                    onChange={(event) => void handleOpmlFileChange(event)}
+                    type="file"
+                  />
+                </label>
+
+                <label className="source-field">
+                  <span>Or paste OPML XML</span>
+                  <textarea
+                    onChange={(event) => setOpmlContent(event.target.value)}
+                    placeholder="<opml version=&quot;2.0&quot;>…"
+                    rows={8}
+                    value={opmlContent}
+                  />
+                </label>
+              </div>
+
+              <div className="source-form__status">
+                <span>{opmlFileName ? `Loaded file: ${opmlFileName}` : 'No file selected'}</span>
+                {importStatus ? (
+                  <em>
+                    Import {importStatus.status}: {importStatus.feedsAdded}/{importStatus.totalFeeds || '?'} added
+                  </em>
+                ) : null}
+              </div>
+
+              <button className="utility-button source-form__submit" disabled={importingOpml} type="submit">
+                {importingOpml ? 'Importing…' : 'Import sources'}
+              </button>
+            </form>
+          </section>
+
+          {sourceNotice ? (
+            <p className={sourceNotice.tone === 'success' ? 'source-note source-note--success' : 'source-note source-note--error'}>
+              {sourceNotice.message}
+            </p>
+          ) : null}
+
           {groupedFeeds.map((group) => (
             <section key={group.id} className="source-cluster">
               <h3>{group.name}</h3>

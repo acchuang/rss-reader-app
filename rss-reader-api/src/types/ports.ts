@@ -205,11 +205,19 @@ export interface FeedFetchPort {
 
 export interface QueuePort {
   enqueueFeedRefresh(feedId: UUID): Promise<void>;
-  enqueueOpmlImport(input: { importId: UUID; userId: UUID; uploadPath: string }): Promise<void>;
+  enqueueOpmlImport(input: {
+    importId: UUID;
+    userId: UUID;
+    uploadPath?: string;
+    opmlContent?: string;
+  }): Promise<void>;
 }
 
 export interface OpmlParserPort {
-  parse(uploadPath: string): Promise<Array<{ xmlUrl: string; title?: string; folderName?: string }>>;
+  parse(input: {
+    uploadPath?: string;
+    opmlContent?: string;
+  }): Promise<Array<{ xmlUrl: string; title?: string; folderName?: string }>>;
 }
 
 export interface ServiceDependencies {

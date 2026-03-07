@@ -5,12 +5,16 @@ import type { ServiceDependencies } from '../types/ports.js';
 export class ImportService {
   constructor(private readonly deps: ServiceDependencies) {}
 
-  async createOpmlImport(userId: string, input: { uploadPath: string }): Promise<{ id: string; status: 'pending' }> {
+  async createOpmlImport(userId: string, input: {
+    uploadPath?: string;
+    opmlContent?: string;
+  }): Promise<{ id: string; status: 'pending' }> {
     const opmlImport = await this.deps.imports.create(userId);
     await this.deps.queue.enqueueOpmlImport({
       importId: opmlImport.id,
       userId,
-      uploadPath: input.uploadPath
+      uploadPath: input.uploadPath,
+      opmlContent: input.opmlContent
     });
     return opmlImport;
   }

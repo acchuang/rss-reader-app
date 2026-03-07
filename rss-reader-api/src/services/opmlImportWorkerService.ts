@@ -4,8 +4,16 @@ import type { ServiceDependencies } from '../types/ports.js';
 export class OpmlImportWorkerService {
   constructor(private readonly deps: ServiceDependencies) {}
 
-  async process(input: { importId: string; userId: string; uploadPath: string }): Promise<void> {
-    const entries = await this.deps.opmlParser.parse(input.uploadPath);
+  async process(input: {
+    importId: string;
+    userId: string;
+    uploadPath?: string;
+    opmlContent?: string;
+  }): Promise<void> {
+    const entries = await this.deps.opmlParser.parse({
+      uploadPath: input.uploadPath,
+      opmlContent: input.opmlContent
+    });
     await this.deps.imports.markProcessing(input.userId, input.importId, entries.length);
 
     const folders = await this.deps.folders.listByUser(input.userId);
