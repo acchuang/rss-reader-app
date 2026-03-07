@@ -29,7 +29,10 @@ npm run dev
 
 Current auth assumption for local scaffolding:
 
-- send `x-user-id: <uuid>` on authenticated requests
+- send `Authorization: Bearer <uuid>` on authenticated requests
+- `x-user-id: <uuid>` is also accepted for local testing
+- `?userId=<uuid>` is available as a last-resort demo fallback
+- `DEMO_USER_ID` can be set in deployment environments to force a seeded demo account
 
 Repository behavior:
 

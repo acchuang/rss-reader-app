@@ -28,6 +28,7 @@ Environment variables:
 
 - `DATABASE_URL`: from the Railway PostgreSQL service
 - `LOG_LEVEL`: `info`
+- `DEMO_USER_ID`: optional demo fallback user id for seeded environments
 
 The API exposes:
 

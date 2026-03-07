@@ -4,6 +4,8 @@ Cron-oriented worker service for refreshing RSS feeds on Railway.
 
 This folder is intentionally a deployable sibling of `rss-reader-api` so Railway can run it with a different start command and cron schedule.
 
+For local API testing, the sibling API service accepts `Authorization: Bearer <uuid>`, supports `?userId=<uuid>`, and can use `DEMO_USER_ID` in deployment environments.
+
 The database design and SQL query pack live in:
 
 - `/Users/acchuang/Project/rss-reader-db/migrations`
