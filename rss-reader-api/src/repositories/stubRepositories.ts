@@ -49,7 +49,8 @@ export function createStubDependencies(): ServiceDependencies {
       findByGuid: async () => notImplemented('ArticleRepository.findByGuid'),
       findByCanonicalUrl: async () => notImplemented('ArticleRepository.findByCanonicalUrl'),
       insertArticle: async () => notImplemented('ArticleRepository.insertArticle'),
-      fanOutArticle: async () => notImplemented('ArticleRepository.fanOutArticle')
+      fanOutArticle: async () => notImplemented('ArticleRepository.fanOutArticle'),
+      backfillRecentArticlesForUser: async () => notImplemented('ArticleRepository.backfillRecentArticlesForUser')
     },
     sidebar: {
       getSummary: async () => notImplemented('SidebarRepository.getSummary')

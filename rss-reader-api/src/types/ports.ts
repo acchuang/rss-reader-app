@@ -137,6 +137,12 @@ export interface ArticleRepository {
     hash: string;
   }): Promise<UUID | null>;
   fanOutArticle(feedId: UUID, articleId: UUID): Promise<void>;
+  backfillRecentArticlesForUser(input: {
+    userId: UUID;
+    feedId: UUID;
+    limit: number;
+    markAsRead?: boolean;
+  }): Promise<number>;
 }
 
 export interface SidebarRepository {

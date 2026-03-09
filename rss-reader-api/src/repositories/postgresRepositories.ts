@@ -386,6 +386,9 @@ class PostgresFeedRepository implements FeedRepository {
          title = coalesce(excluded.title, feeds.title),
          description = coalesce(excluded.description, feeds.description),
          favicon_url = coalesce(excluded.favicon_url, feeds.favicon_url),
+         next_poll_at = now(),
+         status = 'active',
+         last_error_message = null,
          updated_at = now()
        returning id, status`,
       [
@@ -890,6 +893,41 @@ class PostgresArticleRepository implements ArticleRepository {
        on conflict (user_id, article_id) do nothing`,
       [feedId, articleId]
     );
+  }
+
+  async backfillRecentArticlesForUser(input: {
+    userId: UUID;
+    feedId: UUID;
+    limit: number;
+    markAsRead?: boolean;
+  }): Promise<number> {
+    const result = await this.db.query(
+      `with recent_articles as (
+         select a.id
+         from articles a
+         where a.feed_id = $2
+         order by a.published_at desc nulls last, a.id desc
+         limit $3
+       ),
+       inserted as (
+         insert into user_articles (user_id, article_id, is_read, read_at, is_saved, created_at)
+         select
+           $1,
+           recent_articles.id,
+           $4::boolean,
+           case when $4::boolean then now() else null end,
+           false,
+           now()
+         from recent_articles
+         on conflict (user_id, article_id) do nothing
+         returning article_id
+       )
+       select count(*)::int as inserted_count
+       from inserted`,
+      [input.userId, input.feedId, input.limit, input.markAsRead ?? false]
+    );
+
+    return Number(result.rows[0]?.inserted_count ?? 0);
   }
 }
 

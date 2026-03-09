@@ -1,6 +1,8 @@
 import type { FolderDto } from '../types/contracts.js';
 import type { ServiceDependencies } from '../types/ports.js';
 
+const RECENT_BACKFILL_LIMIT = 30;
+
 export class OpmlImportWorkerService {
   constructor(private readonly deps: ServiceDependencies) {}
 
@@ -10,56 +12,83 @@ export class OpmlImportWorkerService {
     uploadPath?: string;
     opmlContent?: string;
   }): Promise<void> {
-    const entries = await this.deps.opmlParser.parse({
-      uploadPath: input.uploadPath,
-      opmlContent: input.opmlContent
-    });
-    await this.deps.imports.markProcessing(input.userId, input.importId, entries.length);
+    try {
+      const entries = await this.deps.opmlParser.parse({
+        uploadPath: input.uploadPath,
+        opmlContent: input.opmlContent
+      });
+      await this.deps.imports.markProcessing(input.userId, input.importId, entries.length);
 
-    const folders = await this.deps.folders.listByUser(input.userId);
-    const folderMap = new Map<string, FolderDto>(folders.map((folder) => [folder.name.toLowerCase(), folder]));
+      const folders = await this.deps.folders.listByUser(input.userId);
+      const folderMap = new Map<string, FolderDto>(folders.map((folder) => [folder.name.toLowerCase(), folder]));
+      const queuedFeedIds = new Set<string>();
+      const hydratedFeedIds = new Set<string>();
 
-    let feedsAdded = 0;
-    let skipped = 0;
+      let feedsAdded = 0;
+      let skipped = 0;
 
-    for (const entry of entries) {
-      try {
-        let folderId: string | null | undefined = null;
+      for (const entry of entries) {
+        try {
+          let folderId: string | null | undefined = null;
 
-        if (entry.folderName) {
-          const key = entry.folderName.toLowerCase();
-          let folder = folderMap.get(key);
-          if (!folder) {
-            folder = await this.deps.folders.create(input.userId, entry.folderName);
-            folderMap.set(key, folder);
+          if (entry.folderName) {
+            const key = entry.folderName.toLowerCase();
+            let folder = folderMap.get(key);
+            if (!folder) {
+              folder = await this.deps.folders.create(input.userId, entry.folderName);
+              folderMap.set(key, folder);
+            }
+            folderId = folder.id;
           }
-          folderId = folder.id;
-        }
 
-        const discovery = await this.deps.discovery.discover({ url: entry.xmlUrl });
-        if (discovery.kind !== 'feed') {
+          const discovery = await this.deps.discovery.discover({ url: entry.xmlUrl });
+          if (discovery.kind !== 'feed') {
+            skipped += 1;
+            continue;
+          }
+
+          const feed = await this.deps.feeds.upsertValidatedFeed(discovery);
+          await this.deps.subscriptions.upsertFromValidatedFeed({
+            userId: input.userId,
+            feedId: feed.id,
+            folderId,
+            titleOverride: entry.title ?? null
+          });
+
+          if (!hydratedFeedIds.has(feed.id)) {
+            await this.deps.articles.backfillRecentArticlesForUser({
+              userId: input.userId,
+              feedId: feed.id,
+              limit: RECENT_BACKFILL_LIMIT,
+              markAsRead: true
+            });
+            hydratedFeedIds.add(feed.id);
+          }
+
+          if (!queuedFeedIds.has(feed.id)) {
+            await this.deps.queue.enqueueFeedRefresh(feed.id);
+            queuedFeedIds.add(feed.id);
+          }
+
+          feedsAdded += 1;
+        } catch {
           skipped += 1;
-          continue;
         }
-
-        const feed = await this.deps.feeds.upsertValidatedFeed(discovery);
-        await this.deps.subscriptions.upsertFromValidatedFeed({
-          userId: input.userId,
-          feedId: feed.id,
-          folderId,
-          titleOverride: entry.title ?? null
-        });
-        feedsAdded += 1;
-      } catch {
-        skipped += 1;
       }
-    }
 
-    await this.deps.imports.markCompleted({
-      userId: input.userId,
-      importId: input.importId,
-      feedsAdded,
-      errorMessage: skipped > 0 ? `${skipped} feed(s) skipped` : null
-    });
+      await this.deps.imports.markCompleted({
+        userId: input.userId,
+        importId: input.importId,
+        feedsAdded,
+        errorMessage: skipped > 0 ? `${skipped} feed(s) skipped` : null
+      });
+    } catch (error) {
+      await this.deps.imports.markFailed({
+        userId: input.userId,
+        importId: input.importId,
+        errorMessage: error instanceof Error ? error.message : 'Unable to process OPML import'
+      });
+      throw error;
+    }
   }
 }

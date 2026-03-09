@@ -2,6 +2,8 @@ import { ConflictError, InvalidFeedError, NotFoundError, UpstreamUnavailableErro
 import type { SubscriptionDto } from '../types/contracts.js';
 import type { ServiceDependencies } from '../types/ports.js';
 
+const RECENT_BACKFILL_LIMIT = 30;
+
 export class SubscriptionService {
   constructor(private readonly deps: ServiceDependencies) {}
 
@@ -42,6 +44,12 @@ export class SubscriptionService {
         titleOverride: input.titleOverride
       });
 
+      await this.deps.articles.backfillRecentArticlesForUser({
+        userId,
+        feedId: feed.id,
+        limit: RECENT_BACKFILL_LIMIT,
+        markAsRead: true
+      });
       await this.deps.queue.enqueueFeedRefresh(feed.id);
 
       return subscription;
