@@ -105,7 +105,7 @@ type RefreshSourceResponse = {
   processed: boolean;
 };
 
-type ViewMode = 'unread' | 'saved';
+type ViewMode = 'unread' | 'recent' | 'saved';
 type Scope =
   | { kind: 'home' }
   | { kind: 'folder'; folderId: string; title: string }
@@ -238,7 +238,7 @@ export function App() {
   const [articles, setArticles] = useState<ArticleSummary[]>([]);
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<ArticleDetail | null>(null);
-  const [viewMode, setViewMode] = useState<ViewMode>('unread');
+  const [viewMode, setViewMode] = useState<ViewMode>('recent');
   const [scope, setScope] = useState<Scope>({ kind: 'home' });
   const [searchDraft, setSearchDraft] = useState('');
   const [searchResults, setSearchResults] = useState<ArticleSummary[] | null>(null);
@@ -270,6 +270,8 @@ export function App() {
     scope.kind === 'home'
       ? viewMode === 'unread'
         ? 'All unread'
+        : viewMode === 'recent'
+          ? 'Recent desk'
         : 'Saved shelf'
       : scope.title;
 
@@ -280,20 +282,20 @@ export function App() {
     setSearchResults(null);
   }
 
-  function selectHome(nextViewMode: ViewMode = 'unread') {
+  function selectHome(nextViewMode: ViewMode = 'recent') {
     setViewMode(nextViewMode);
     setScope({ kind: 'home' });
     clearSearchState();
   }
 
   function selectFolder(folderId: string, title: string) {
-    setViewMode('unread');
+    setViewMode((current) => (current === 'saved' ? 'recent' : current));
     setScope({ kind: 'folder', folderId, title });
     clearSearchState();
   }
 
   function selectFeed(subscriptionId: string, title: string) {
-    setViewMode('unread');
+    setViewMode((current) => (current === 'saved' ? 'recent' : current));
     setScope({ kind: 'feed', subscriptionId, title });
     clearSearchState();
     setSourceDrawerOpen(false);
@@ -318,15 +320,23 @@ export function App() {
     setSubscriptions(data);
   }
 
-  async function refreshReaderSurface(nextViewMode = viewMode, nextScope = scope) {
+  async function refreshReaderSurface(
+    nextViewMode = viewMode,
+    nextScope = scope,
+    options?: { preserveSelection?: boolean }
+  ) {
     await Promise.all([
       refreshSidebar(),
       refreshSubscriptions(),
-      refreshArticles(nextViewMode, nextScope)
+      refreshArticles(nextViewMode, nextScope, options)
     ]);
   }
 
-  async function refreshArticles(nextViewMode: ViewMode, nextScope: Scope) {
+  async function refreshArticles(
+    nextViewMode: ViewMode,
+    nextScope: Scope,
+    options?: { preserveSelection?: boolean }
+  ) {
     setLoadingList(true);
     setError(null);
 
@@ -336,6 +346,12 @@ export function App() {
       });
       setArticles(data.items);
       startTransition(() => {
+        if (options?.preserveSelection && selectedArticleId) {
+          const preserved = data.items.find((article) => article.id === selectedArticleId);
+          setSelectedArticleId(preserved?.id ?? data.items[0]?.id ?? null);
+          return;
+        }
+
         setSelectedArticleId(data.items[0]?.id ?? null);
       });
     } catch (caughtError) {
@@ -355,7 +371,7 @@ export function App() {
         const [sidebarData, subscriptionData, articleData] = await Promise.all([
           fetchJson<SidebarResponse>(`${API_BASE_URL}/api/sidebar`),
           fetchJson<Subscription[]>(`${API_BASE_URL}/api/subscriptions`),
-          fetchJson<ArticleListResponse>(buildArticlesUrl('unread', { kind: 'home' }))
+          fetchJson<ArticleListResponse>(buildArticlesUrl('recent', { kind: 'home' }))
         ]);
 
         if (cancelled) {
@@ -386,14 +402,44 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
     void refreshArticles(viewMode, scope);
+  }, [scope, viewMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshInPlace() {
+      if (searchResults) {
+        return;
+      }
+
+      try {
+        await refreshReaderSurface(viewMode, scope, { preserveSelection: true });
+      } catch {
+        if (!cancelled) {
+          // Individual loaders already surface errors. This keeps the polling quiet.
+        }
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshInPlace();
+    }, 60_000);
+
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        void refreshInPlace();
+      }
+    }
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       cancelled = true;
-      void cancelled;
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [scope, viewMode]);
+  }, [scope, searchResults, selectedArticleId, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -714,16 +760,16 @@ export function App() {
       };
 
       clearSearchState();
-      setViewMode('unread');
+      setViewMode('recent');
       setScope(nextScope);
-      await refreshReaderSurface('unread', nextScope);
+      await refreshReaderSurface('recent', nextScope);
 
       setAddFeedUrl('');
       setAddFeedFolderId('');
       setAddFeedTitleOverride('');
       setSourceNotice({
         tone: 'success',
-        message: 'Feed connected. Fresh entries may appear after the first refresh pass.'
+        message: 'Feed connected. The reader switched to the recent lane so fetched entries stay visible.'
       });
     } catch (caughtError) {
       setSourceNotice({
@@ -772,8 +818,8 @@ export function App() {
         throw new Error(status.errorMessage ?? 'Import failed');
       }
 
-      await refreshReaderSurface('unread', { kind: 'home' });
-      setViewMode('unread');
+      await refreshReaderSurface('recent', { kind: 'home' });
+      setViewMode('recent');
       setScope({ kind: 'home' });
       setOpmlContent('');
       setOpmlFileName(null);
@@ -868,6 +914,13 @@ export function App() {
                 Unread
               </button>
               <button
+                className={viewMode === 'recent' ? 'is-active' : ''}
+                onClick={() => setViewMode('recent')}
+                type="button"
+              >
+                Recent
+              </button>
+              <button
                 className={viewMode === 'saved' ? 'is-active' : ''}
                 onClick={() => setViewMode('saved')}
                 type="button"
@@ -906,11 +959,19 @@ export function App() {
           <section className="nav-block nav-block--hero">
             <h2>Desk</h2>
             <button
-              className={scope.kind === 'home' ? 'nav-item is-active' : 'nav-item'}
-              onClick={() => selectHome('unread')}
+              className={viewMode === 'recent' && scope.kind === 'home' ? 'nav-item is-active' : 'nav-item'}
+              onClick={() => selectHome('recent')}
               type="button"
             >
               <span>Everything</span>
+              <em>{visibleArticles.length}</em>
+            </button>
+            <button
+              className={viewMode === 'unread' && scope.kind === 'home' ? 'nav-item is-active' : 'nav-item'}
+              onClick={() => selectHome('unread')}
+              type="button"
+            >
+              <span>Unread cabinet</span>
               <em>{sidebar?.views.unreadCount ?? 0}</em>
             </button>
             <button
@@ -983,6 +1044,29 @@ export function App() {
 
             <div className="panel__header-actions">
               <span className="panel__count">{visibleArticles.length} stories</span>
+              {activeSubscription ? (
+                <button
+                  className="utility-button"
+                  disabled={refreshingSubscriptionId === activeSubscription.id}
+                  onClick={() =>
+                    void handleRefreshSource(
+                      activeSubscription.id,
+                      activeSubscription.titleOverride ?? activeSubscription.feed.title ?? 'Source'
+                    )
+                  }
+                  type="button"
+                >
+                  {refreshingSubscriptionId === activeSubscription.id ? 'Refreshing source…' : 'Refresh source'}
+                </button>
+              ) : null}
+              <button
+                className="utility-button"
+                disabled={loadingList}
+                onClick={() => void refreshReaderSurface(viewMode, scope, { preserveSelection: true })}
+                type="button"
+              >
+                {loadingList ? 'Refreshing…' : 'Refresh view'}
+              </button>
               <button
                 className="utility-button"
                 disabled={bulkLoading || visibleArticles.every((article) => article.isRead)}
@@ -998,7 +1082,11 @@ export function App() {
           {error ? <p className="empty-state empty-state--error">{error}</p> : null}
           {!loadingList && !error && visibleArticles.length === 0 ? (
             <p className="empty-state">
-              {searchResults ? 'No matches in the seeded archive yet.' : 'This lane is clear.'}
+              {searchResults
+                ? 'No matches in the seeded archive yet.'
+                : viewMode === 'unread'
+                  ? 'Unread cabinet is clear. Switch to Recent to review fetched stories or mark one unread again.'
+                  : 'This lane is clear.'}
             </p>
           ) : null}
 
