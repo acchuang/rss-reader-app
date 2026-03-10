@@ -65,6 +65,19 @@ Current production cadence:
 
 - feed refresh cron runs every 120 minutes via `0 */2 * * *`
 
+## Snapshot issue workaround
+
+If `railway up` fails locally with `Failed to create code snapshot`, deploy from a clean clone:
+
+```bash
+./scripts/railway_deploy_clean.sh api
+./scripts/railway_deploy_clean.sh feed-refresh
+./scripts/railway_deploy_clean.sh web
+```
+
+The repo also includes `.railwayignore` files at the root and in each deployable service to keep
+local archives small.
+
 ## Why the config path is explicit
 
 Railway's monorepo docs note that config-as-code does not automatically follow the service root directory for isolated monorepos. Set the absolute config path in service settings.
