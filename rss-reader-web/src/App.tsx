@@ -252,11 +252,11 @@ export function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('recent');
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
     if (typeof window === 'undefined') {
-      return 'three';
+      return 'two';
     }
 
     const storedValue = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
-    return storedValue === 'two' ? 'two' : 'three';
+    return storedValue === 'three' ? 'three' : 'two';
   });
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(() => {
     if (typeof window === 'undefined') {
@@ -310,11 +310,56 @@ export function App() {
       ? viewMode === 'unread'
         ? 'All unread'
         : viewMode === 'recent'
-          ? 'Recent desk'
-        : 'Saved shelf'
+          ? 'Today'
+        : 'Read later'
       : scope.title;
 
   const folderLookup = new Map((sidebar?.folders ?? []).map((folder) => [folder.id, folder.name]));
+  const subscriptionByFeedId = new Map(subscriptions.map((entry) => [entry.feed.id, entry]));
+  const articleGroups = (() => {
+    const groups: Array<{ key: string; title: string; items: ArticleSummary[] }> = [];
+    const groupMap = new Map<string, { key: string; title: string; items: ArticleSummary[] }>();
+
+    for (const article of visibleArticles) {
+      const subscription = subscriptionByFeedId.get(article.feed.id);
+      const groupTitle =
+        searchResults
+          ? 'Search results'
+          : scope.kind === 'folder'
+            ? scope.title
+            : scope.kind === 'feed'
+              ? scope.title
+              : folderLookup.get(subscription?.folderId ?? '') ?? article.feed.title;
+      const key = `${scope.kind}:${groupTitle}`;
+      const existingGroup = groupMap.get(key);
+
+      if (existingGroup) {
+        existingGroup.items.push(article);
+        continue;
+      }
+
+      const nextGroup = {
+        key,
+        title: groupTitle,
+        items: [article]
+      };
+
+      groupMap.set(key, nextGroup);
+      groups.push(nextGroup);
+    }
+
+    return groups;
+  })();
+  const storyLabel = (count: number) => `${count} ${count === 1 ? 'story' : 'stories'}`;
+  const scopeSummary = searchResults
+    ? `${visibleArticles.length} result${visibleArticles.length === 1 ? '' : 's'} in the archive`
+    : scope.kind === 'home'
+      ? `${storyLabel(visibleArticles.length)} across ${articleGroups.length} section${
+          articleGroups.length === 1 ? '' : 's'
+        }`
+      : scope.kind === 'folder'
+        ? `${storyLabel(visibleArticles.length)} inside ${scope.title}`
+        : `${storyLabel(visibleArticles.length)} from ${scope.title}`;
 
   function clearSearchState() {
     setSearchDraft('');
@@ -973,19 +1018,16 @@ export function App() {
         : null;
 
   return (
-    <div className="shell shell--editorial">
+    <div className="shell shell--editorial shell--reader">
       <div className="shell__glow shell__glow--amber" />
       <div className="shell__glow shell__glow--teal" />
       <div className="shell__glow shell__glow--ink" />
 
-      <header className="topbar topbar--magazine">
-        <div className="topbar__headline">
+      <header className="topbar topbar--reader">
+        <div className="topbar__headline topbar__headline--reader">
           <p className="eyebrow">Signal Cabinet</p>
-          <h1>Feedly-style reading, now upgraded into a full editorial desk.</h1>
-          <p className="lede">
-            Triage the live Railway feed set, jump by folder, search the archive, and manage read/save state
-            without leaving the stream.
-          </p>
+          <h1>{selectedTitle}</h1>
+          <p className="lede">{scopeSummary}</p>
         </div>
 
         <div className="topbar__controls topbar__controls--stacked">
@@ -1013,14 +1055,14 @@ export function App() {
                 onClick={() => setViewMode('recent')}
                 type="button"
               >
-                Recent
+                Today
               </button>
               <button
                 className={viewMode === 'saved' ? 'is-active' : ''}
                 onClick={() => setViewMode('saved')}
                 type="button"
               >
-                Saved
+                Read later
               </button>
             </div>
 
@@ -1083,46 +1125,28 @@ export function App() {
             </div>
 
             <button className="utility-button" onClick={() => setSourceDrawerOpen((current) => !current)} type="button">
-              {sourceDrawerOpen ? 'Hide sources' : 'Sources & import'}
+              {sourceDrawerOpen ? 'Hide sources' : 'Follow sources'}
             </button>
           </div>
         </div>
       </header>
 
-      <section className="headline-strip">
-        <article className="headline-card">
-          <span>Unread cabinet</span>
-          <strong>{loadingSidebar ? '...' : sidebar?.views.unreadCount ?? 0}</strong>
-          <small>live queue</small>
-        </article>
-        <article className="headline-card">
-          <span>Saved shelf</span>
-          <strong>{loadingSidebar ? '...' : sidebar?.views.savedCount ?? 0}</strong>
-          <small>kept for later</small>
-        </article>
-        <article className="headline-card">
-          <span>Current lane</span>
-          <strong>{selectedTitle}</strong>
-          <small>{searchResults ? 'search results' : `${visibleArticles.length} visible stories`}</small>
-        </article>
-      </section>
-
       <main
         className={
           layoutMode === 'two'
-            ? `reader-grid reader-grid--enhanced reader-grid--two-column reader-grid--pane-${readingPaneMode}`
-            : `reader-grid reader-grid--enhanced reader-grid--pane-${readingPaneMode}`
+            ? 'reader-grid reader-grid--feed reader-grid--two-column'
+            : `reader-grid reader-grid--feed reader-grid--pane-${readingPaneMode}`
         }
       >
         <aside className="panel panel--nav">
           <section className="nav-block nav-block--hero">
-            <h2>Desk</h2>
+            <h2>Library</h2>
             <button
               className={viewMode === 'recent' && scope.kind === 'home' ? 'nav-item is-active' : 'nav-item'}
               onClick={() => selectHome('recent')}
               type="button"
             >
-              <span>Everything</span>
+              <span>Today</span>
               <em>{visibleArticles.length}</em>
             </button>
             <button
@@ -1138,8 +1162,16 @@ export function App() {
               onClick={() => selectHome('saved')}
               type="button"
             >
-              <span>Saved shelf</span>
+              <span>Read later</span>
               <em>{sidebar?.views.savedCount ?? 0}</em>
+            </button>
+            <button
+              className={sourceDrawerOpen ? 'nav-item is-active' : 'nav-item'}
+              onClick={() => setSourceDrawerOpen(true)}
+              type="button"
+            >
+              <span>Follow sources</span>
+              <em>{subscriptions.length}</em>
             </button>
           </section>
 
@@ -1195,9 +1227,9 @@ export function App() {
         </aside>
 
         <section className="panel panel--list panel--list-rich">
-          <header className="panel__header panel__header--rich">
+          <header className="panel__header panel__header--feed">
             <div>
-              <p className="eyebrow">{searchResults ? 'Archive query' : 'Reading queue'}</p>
+              <p className="eyebrow">{searchResults ? 'Archive query' : 'Today view'}</p>
               <h2>{searchResults ? `Results for "${deferredSearch}"` : selectedTitle}</h2>
             </div>
 
@@ -1249,143 +1281,170 @@ export function App() {
             </p>
           ) : null}
 
-          <div className="article-stack">
-            {visibleArticles.map((article, index) => (
-              <article
-                key={article.id}
-                className={article.id === selectedArticleId ? 'story-card is-active' : 'story-card'}
-                style={{ animationDelay: `${index * 55}ms` }}
-              >
-                <button className="story-card__hit" onClick={() => setSelectedArticleId(article.id)} type="button">
-                  <div className="story-card__meta">
-                    <span>{article.feed.title}</span>
-                    <time>{timeAgo(article.publishedAt)}</time>
-                  </div>
-                  <h3>{article.title}</h3>
-                  <p>{article.summary ?? 'No summary included in the feed.'}</p>
-                </button>
+          <div className="article-stack article-stack--dense">
+            {articleGroups.map((group) => (
+              <section key={group.key} className="story-group">
+                <header className="story-group__header">
+                  <h3>{group.title}</h3>
+                  <span>{group.items.length}</span>
+                </header>
 
-                <div className="story-card__footer">
-                  <div className="story-card__flags">
-                    {article.isSaved ? <span>Saved</span> : null}
-                    {!article.isRead ? <span>Unread</span> : <span>Read</span>}
-                    <span>{formatDate(article.publishedAt)}</span>
-                  </div>
+                <div className="story-table">
+                  {group.items.map((article) => (
+                    <article
+                      key={article.id}
+                      className={article.id === selectedArticleId ? 'story-row is-active' : 'story-row'}
+                    >
+                      <button className="story-row__hit" onClick={() => setSelectedArticleId(article.id)} type="button">
+                        <span className="story-row__bookmark" data-saved={article.isSaved ? 'true' : 'false'} />
+                        <span className="story-row__source">{article.feed.title}</span>
+                        <span className="story-row__headline">
+                          <strong>{article.title}</strong>
+                          <span>{article.summary ?? 'No summary included in the feed.'}</span>
+                        </span>
+                        <span
+                          className={
+                            !article.isRead
+                              ? 'story-row__trend is-hot'
+                              : article.isSaved
+                                ? 'story-row__trend is-saved'
+                                : 'story-row__trend'
+                          }
+                        >
+                          {!article.isRead ? 'Unread' : article.isSaved ? 'Saved' : 'Read'}
+                        </span>
+                        <time className="story-row__time">{timeAgo(article.publishedAt)}</time>
+                      </button>
 
-                  <div className="story-card__actions">
-                    <button
-                      className="icon-button"
-                      disabled={Boolean(pendingMap[article.id])}
-                      onClick={() => void handleToggleRead(article.id, !article.isRead)}
-                      type="button"
-                    >
-                      {article.isRead ? 'Unread' : 'Read'}
-                    </button>
-                    <button
-                      className="icon-button"
-                      disabled={Boolean(pendingMap[article.id])}
-                      onClick={() => void handleToggleSaved(article.id, !article.isSaved)}
-                      type="button"
-                    >
-                      {article.isSaved ? 'Unsave' : 'Save'}
-                    </button>
-                  </div>
+                      <div className="story-row__actions">
+                        <button
+                          className="icon-button"
+                          disabled={Boolean(pendingMap[article.id])}
+                          onClick={() => void handleToggleRead(article.id, !article.isRead)}
+                          type="button"
+                        >
+                          {article.isRead ? 'Unread' : 'Read'}
+                        </button>
+                        <button
+                          className="icon-button"
+                          disabled={Boolean(pendingMap[article.id])}
+                          onClick={() => void handleToggleSaved(article.id, !article.isSaved)}
+                          type="button"
+                        >
+                          {article.isSaved ? 'Unsave' : 'Save'}
+                        </button>
+                      </div>
+                    </article>
+                  ))}
                 </div>
-              </article>
+              </section>
             ))}
           </div>
         </section>
 
-        <article className="panel panel--detail panel--detail-rich">
-          {selectedArticle && !loadingArticle ? (
-            <>
-              <header className="detail-header">
-                <div className="detail-header__eyebrow">
-                  <p className="eyebrow">{selectedArticle.feed.title}</p>
-                  <span>{statusLabel(subscriptions.find((entry) => entry.feed.id === selectedArticle.feed.id)?.feed.status ?? 'active')}</span>
-                </div>
-                <h2>{selectedArticle.title}</h2>
-                <div className="detail-header__meta">
-                  <span>{selectedArticle.author ?? 'Unknown author'}</span>
-                  <time>{formatDate(selectedArticle.publishedAt)}</time>
-                  <span>{estimateReadTime(selectedArticle)}</span>
-                </div>
-              </header>
+        {layoutMode === 'three' ? (
+          <article className="panel panel--detail panel--detail-rich">
+            {selectedArticle && !loadingArticle ? (
+              <>
+                <header className="detail-header">
+                  <div className="detail-header__eyebrow">
+                    <p className="eyebrow">{selectedArticle.feed.title}</p>
+                    <span>
+                      {
+                        statusLabel(
+                          subscriptions.find((entry) => entry.feed.id === selectedArticle.feed.id)?.feed.status ?? 'active'
+                        )
+                      }
+                    </span>
+                  </div>
+                  <h2>{selectedArticle.title}</h2>
+                  <div className="detail-header__meta">
+                    <span>{selectedArticle.author ?? 'Unknown author'}</span>
+                    <time>{formatDate(selectedArticle.publishedAt)}</time>
+                    <span>{estimateReadTime(selectedArticle)}</span>
+                  </div>
+                </header>
 
                 <div className="detail-toolbar detail-toolbar--actions">
-                <div className="detail-toolbar__group">
-                  {activeSubscription ? (
+                  <div className="detail-toolbar__group">
+                    {activeSubscription ? (
+                      <button
+                        className="utility-button"
+                        disabled={refreshingSubscriptionId === activeSubscription.id}
+                        onClick={() =>
+                          void handleRefreshSource(
+                            activeSubscription.id,
+                            activeSubscription.titleOverride ?? activeSubscription.feed.title ?? 'Source'
+                          )
+                        }
+                        type="button"
+                      >
+                        {refreshingSubscriptionId === activeSubscription.id ? 'Refreshing source…' : 'Refresh source'}
+                      </button>
+                    ) : null}
                     <button
                       className="utility-button"
-                      disabled={refreshingSubscriptionId === activeSubscription.id}
-                      onClick={() => void handleRefreshSource(activeSubscription.id, activeSubscription.titleOverride ?? activeSubscription.feed.title ?? 'Source')}
+                      disabled={Boolean(pendingMap[selectedArticle.id])}
+                      onClick={() => void handleToggleRead(selectedArticle.id, !selectedArticle.isRead)}
                       type="button"
                     >
-                      {refreshingSubscriptionId === activeSubscription.id ? 'Refreshing source…' : 'Refresh source'}
+                      {selectedArticle.isRead ? 'Mark unread' : 'Mark read'}
                     </button>
-                  ) : null}
-                  <button
-                    className="utility-button"
-                    disabled={Boolean(pendingMap[selectedArticle.id])}
-                    onClick={() => void handleToggleRead(selectedArticle.id, !selectedArticle.isRead)}
-                    type="button"
-                  >
-                    {selectedArticle.isRead ? 'Mark unread' : 'Mark read'}
-                  </button>
-                  <button
-                    className="utility-button"
-                    disabled={Boolean(pendingMap[selectedArticle.id])}
-                    onClick={() => void handleToggleSaved(selectedArticle.id, !selectedArticle.isSaved)}
-                    type="button"
-                  >
-                    {selectedArticle.isSaved ? 'Remove from saved' : 'Save article'}
-                  </button>
-                  {activeSubscription ? (
                     <button
-                      className="utility-button button--danger"
-                      disabled={deletingSubscriptionId === activeSubscription.id}
-                      onClick={() => void handleRemoveSource(activeSubscription)}
+                      className="utility-button"
+                      disabled={Boolean(pendingMap[selectedArticle.id])}
+                      onClick={() => void handleToggleSaved(selectedArticle.id, !selectedArticle.isSaved)}
                       type="button"
                     >
-                      {deletingSubscriptionId === activeSubscription.id ? 'Removing source…' : 'Remove source'}
+                      {selectedArticle.isSaved ? 'Remove from saved' : 'Save article'}
                     </button>
-                  ) : null}
+                    {activeSubscription ? (
+                      <button
+                        className="utility-button button--danger"
+                        disabled={deletingSubscriptionId === activeSubscription.id}
+                        onClick={() => void handleRemoveSource(activeSubscription)}
+                        type="button"
+                      >
+                        {deletingSubscriptionId === activeSubscription.id ? 'Removing source…' : 'Remove source'}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <a href={selectedArticle.canonicalUrl} rel="noreferrer" target="_blank">
+                    Open original
+                  </a>
                 </div>
 
-                <a href={selectedArticle.canonicalUrl} rel="noreferrer" target="_blank">
-                  Open original
-                </a>
-              </div>
-
-              <section className="detail-body">
-                <div className="detail-summary-card">
-                  <div>
-                    <span>Summary</span>
-                    <strong>{selectedArticle.summary ?? 'No summary provided'}</strong>
+                <section className="detail-body">
+                  <div className="detail-summary-card">
+                    <div>
+                      <span>Summary</span>
+                      <strong>{selectedArticle.summary ?? 'No summary provided'}</strong>
+                    </div>
+                    <div>
+                      <span>Status</span>
+                      <strong>{selectedArticle.isSaved ? 'Saved' : 'Live in queue'}</strong>
+                    </div>
                   </div>
-                  <div>
-                    <span>Status</span>
-                    <strong>{selectedArticle.isSaved ? 'Saved' : 'Live in queue'}</strong>
-                  </div>
-                </div>
 
-                <div
-                  className="detail-content"
-                  dangerouslySetInnerHTML={{
-                    __html:
-                      selectedArticle.contentHtml ??
-                      `<p>${selectedArticle.contentText ?? 'No additional content was stored.'}</p>`
-                  }}
-                />
-              </section>
-            </>
-          ) : null}
+                  <div
+                    className="detail-content"
+                    dangerouslySetInnerHTML={{
+                      __html:
+                        selectedArticle.contentHtml ??
+                        `<p>${selectedArticle.contentText ?? 'No additional content was stored.'}</p>`
+                    }}
+                  />
+                </section>
+              </>
+            ) : null}
 
-          {loadingArticle ? <p className="empty-state">Pulling article detail…</p> : null}
-          {!loadingArticle && !selectedArticle ? (
-            <p className="empty-state">Pick a story to inspect the full entry.</p>
-          ) : null}
-        </article>
+            {loadingArticle ? <p className="empty-state">Pulling article detail…</p> : null}
+            {!loadingArticle && !selectedArticle ? (
+              <p className="empty-state">Pick a story to inspect the full entry.</p>
+            ) : null}
+          </article>
+        ) : null}
       </main>
 
       <aside className={sourceDrawerOpen ? 'source-drawer is-open' : 'source-drawer'}>
