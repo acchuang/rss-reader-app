@@ -105,6 +105,10 @@ type RefreshSourceResponse = {
   processed: boolean;
 };
 
+type DeleteSubscriptionResponse = {
+  deleted: true;
+};
+
 type ViewMode = 'unread' | 'recent' | 'saved';
 type Scope =
   | { kind: 'home' }
@@ -112,9 +116,11 @@ type Scope =
   | { kind: 'feed'; subscriptionId: string; title: string };
 
 type PendingAction = 'read' | 'unread' | 'save' | 'unsave';
+type LayoutMode = 'two' | 'three';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'https://api-production-c2fc.up.railway.app';
+const LAYOUT_STORAGE_KEY = 'signal-cabinet-layout-mode';
 
 const KEYBOARD_CARDS = [
   { key: 'J / K', label: 'Move selection' },
@@ -202,12 +208,14 @@ function sleep(milliseconds: number): Promise<void> {
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body !== undefined && !headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
+  }
+
   const response = await fetch(url, {
     ...init,
-    headers: {
-      'content-type': 'application/json',
-      ...(init?.headers ?? {})
-    }
+    headers
   });
 
   if (!response.ok) {
@@ -239,6 +247,14 @@ export function App() {
   const [selectedArticleId, setSelectedArticleId] = useState<string | null>(null);
   const [selectedArticle, setSelectedArticle] = useState<ArticleDetail | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('recent');
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => {
+    if (typeof window === 'undefined') {
+      return 'three';
+    }
+
+    const storedValue = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
+    return storedValue === 'two' ? 'two' : 'three';
+  });
   const [scope, setScope] = useState<Scope>({ kind: 'home' });
   const [searchDraft, setSearchDraft] = useState('');
   const [searchResults, setSearchResults] = useState<ArticleSummary[] | null>(null);
@@ -257,6 +273,7 @@ export function App() {
   const [importingOpml, setImportingOpml] = useState(false);
   const [importStatus, setImportStatus] = useState<ImportStatusResponse | null>(null);
   const [refreshingSubscriptionId, setRefreshingSubscriptionId] = useState<string | null>(null);
+  const [deletingSubscriptionId, setDeletingSubscriptionId] = useState<string | null>(null);
   const [sourceNotice, setSourceNotice] = useState<{ tone: 'success' | 'error'; message: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -400,6 +417,10 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(LAYOUT_STORAGE_KEY, layoutMode);
+  }, [layoutMode]);
 
   useEffect(() => {
     void refreshArticles(viewMode, scope);
@@ -865,6 +886,44 @@ export function App() {
     }
   }
 
+  async function handleRemoveSource(subscription: Subscription) {
+    const title = subscription.titleOverride ?? subscription.feed.title ?? 'this source';
+    const confirmed = window.confirm(`Remove ${title} from your reader?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingSubscriptionId(subscription.id);
+    setSourceNotice(null);
+
+    const removingActiveFeed = scope.kind === 'feed' && scope.subscriptionId === subscription.id;
+    const nextScope: Scope = removingActiveFeed ? { kind: 'home' } : scope;
+    const nextViewMode: ViewMode = removingActiveFeed ? 'recent' : viewMode;
+
+    try {
+      await fetchJson<DeleteSubscriptionResponse>(`${API_BASE_URL}/api/subscriptions/${subscription.id}`, {
+        method: 'DELETE'
+      });
+
+      clearSearchState();
+      setViewMode(nextViewMode);
+      setScope(nextScope);
+      await refreshReaderSurface(nextViewMode, nextScope);
+      setSourceNotice({
+        tone: 'success',
+        message: `${title} removed from your source directory.`
+      });
+    } catch (caughtError) {
+      setSourceNotice({
+        tone: 'error',
+        message: caughtError instanceof Error ? caughtError.message : `Unable to remove ${title}`
+      });
+    } finally {
+      setDeletingSubscriptionId(null);
+    }
+  }
+
   const groupedFeeds = (sidebar?.folders ?? []).map((folder) => ({
     ...folder,
     feeds: (sidebar?.feeds ?? []).filter((feed) => feed.folderId === folder.id)
@@ -929,6 +988,23 @@ export function App() {
               </button>
             </div>
 
+            <div className="segmented" aria-label="Column layout">
+              <button
+                className={layoutMode === 'two' ? 'is-active' : ''}
+                onClick={() => setLayoutMode('two')}
+                type="button"
+              >
+                2 col
+              </button>
+              <button
+                className={layoutMode === 'three' ? 'is-active' : ''}
+                onClick={() => setLayoutMode('three')}
+                type="button"
+              >
+                3 col
+              </button>
+            </div>
+
             <button className="utility-button" onClick={() => setSourceDrawerOpen((current) => !current)} type="button">
               {sourceDrawerOpen ? 'Hide sources' : 'Sources & import'}
             </button>
@@ -954,7 +1030,13 @@ export function App() {
         </article>
       </section>
 
-      <main className="reader-grid reader-grid--enhanced">
+      <main
+        className={
+          layoutMode === 'two'
+            ? 'reader-grid reader-grid--enhanced reader-grid--two-column'
+            : 'reader-grid reader-grid--enhanced'
+        }
+      >
         <aside className="panel panel--nav">
           <section className="nav-block nav-block--hero">
             <h2>Desk</h2>
@@ -1181,6 +1263,16 @@ export function App() {
                   >
                     {selectedArticle.isSaved ? 'Remove from saved' : 'Save article'}
                   </button>
+                  {activeSubscription ? (
+                    <button
+                      className="utility-button button--danger"
+                      disabled={deletingSubscriptionId === activeSubscription.id}
+                      onClick={() => void handleRemoveSource(activeSubscription)}
+                      type="button"
+                    >
+                      {deletingSubscriptionId === activeSubscription.id ? 'Removing source…' : 'Remove source'}
+                    </button>
+                  ) : null}
                 </div>
 
                 <a href={selectedArticle.canonicalUrl} rel="noreferrer" target="_blank">
@@ -1392,6 +1484,14 @@ export function App() {
                     type="button"
                   >
                     {refreshingSubscriptionId === subscription.id ? 'Refreshing…' : 'Refresh'}
+                  </button>
+                  <button
+                    className="icon-button button--danger"
+                    disabled={deletingSubscriptionId === subscription.id}
+                    onClick={() => void handleRemoveSource(subscription)}
+                    type="button"
+                  >
+                    {deletingSubscriptionId === subscription.id ? 'Removing…' : 'Remove'}
                   </button>
                 </div>
               </article>

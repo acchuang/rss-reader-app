@@ -19,7 +19,8 @@ export async function buildApp() {
   const services = createServices();
 
   await app.register(cors, {
-    origin: true
+    origin: true,
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS']
   });
   await app.register(requestContextPlugin);
   await registerRoutes(app, services);
