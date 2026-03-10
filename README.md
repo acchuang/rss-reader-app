@@ -19,3 +19,9 @@ Suggested starting point:
 4. add a frontend app against the existing API surface
 
 Deployment notes for Railway are in `RAILWAY.md`.
+
+Scheduled refresh:
+
+- `.github/workflows/refresh-rss-sources.yml` runs every 120 minutes
+- it calls the live API refresh endpoint for every non-disabled subscription
+- this is the active production fallback while Railway local snapshot deploys remain unreliable
