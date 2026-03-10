@@ -301,8 +301,24 @@ textarea {
   align-items: start;
 }
 
+.reader-grid--pane-narrow {
+  grid-template-columns: 270px minmax(420px, 1.18fr) minmax(320px, 0.82fr);
+}
+
+.reader-grid--pane-wide {
+  grid-template-columns: 270px minmax(340px, 0.92fr) minmax(460px, 1.18fr);
+}
+
 .reader-grid--two-column {
   grid-template-columns: 270px minmax(720px, 1fr);
+}
+
+.reader-grid--two-column.reader-grid--pane-narrow {
+  grid-template-columns: 250px minmax(780px, 1fr);
+}
+
+.reader-grid--two-column.reader-grid--pane-wide {
+  grid-template-columns: 290px minmax(660px, 1fr);
 }
 
 .reader-grid--two-column .panel--nav {

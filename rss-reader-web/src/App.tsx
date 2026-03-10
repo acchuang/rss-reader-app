@@ -117,10 +117,13 @@ type Scope =
 
 type PendingAction = 'read' | 'unread' | 'save' | 'unsave';
 type LayoutMode = 'two' | 'three';
+type ReadingPaneMode = 'narrow' | 'balanced' | 'wide';
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'https://api-production-c2fc.up.railway.app';
 const LAYOUT_STORAGE_KEY = 'signal-cabinet-layout-mode';
+const AUTO_REFRESH_STORAGE_KEY = 'signal-cabinet-auto-refresh';
+const READING_PANE_STORAGE_KEY = 'signal-cabinet-reading-pane-mode';
 
 const KEYBOARD_CARDS = [
   { key: 'J / K', label: 'Move selection' },
@@ -254,6 +257,25 @@ export function App() {
 
     const storedValue = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
     return storedValue === 'two' ? 'two' : 'three';
+  });
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(() => {
+    if (typeof window === 'undefined') {
+      return true;
+    }
+
+    return window.localStorage.getItem(AUTO_REFRESH_STORAGE_KEY) !== 'off';
+  });
+  const [readingPaneMode, setReadingPaneMode] = useState<ReadingPaneMode>(() => {
+    if (typeof window === 'undefined') {
+      return 'balanced';
+    }
+
+    const storedValue = window.localStorage.getItem(READING_PANE_STORAGE_KEY);
+    if (storedValue === 'narrow' || storedValue === 'wide') {
+      return storedValue;
+    }
+
+    return 'balanced';
   });
   const [scope, setScope] = useState<Scope>({ kind: 'home' });
   const [searchDraft, setSearchDraft] = useState('');
@@ -423,11 +445,25 @@ export function App() {
   }, [layoutMode]);
 
   useEffect(() => {
+    window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, autoRefreshEnabled ? 'on' : 'off');
+  }, [autoRefreshEnabled]);
+
+  useEffect(() => {
+    window.localStorage.setItem(READING_PANE_STORAGE_KEY, readingPaneMode);
+  }, [readingPaneMode]);
+
+  useEffect(() => {
     void refreshArticles(viewMode, scope);
   }, [scope, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
+
+    if (!autoRefreshEnabled) {
+      return () => {
+        cancelled = true;
+      };
+    }
 
     async function refreshInPlace() {
       if (searchResults) {
@@ -460,7 +496,7 @@ export function App() {
       window.clearInterval(intervalId);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [scope, searchResults, selectedArticleId, viewMode]);
+  }, [autoRefreshEnabled, scope, searchResults, selectedArticleId, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -988,6 +1024,23 @@ export function App() {
               </button>
             </div>
 
+            <div className="segmented" aria-label="RSS source refresh">
+              <button
+                className={autoRefreshEnabled ? 'is-active' : ''}
+                onClick={() => setAutoRefreshEnabled(true)}
+                type="button"
+              >
+                Refresh on
+              </button>
+              <button
+                className={!autoRefreshEnabled ? 'is-active' : ''}
+                onClick={() => setAutoRefreshEnabled(false)}
+                type="button"
+              >
+                Refresh off
+              </button>
+            </div>
+
             <div className="segmented" aria-label="Column layout">
               <button
                 className={layoutMode === 'two' ? 'is-active' : ''}
@@ -1002,6 +1055,30 @@ export function App() {
                 type="button"
               >
                 3 col
+              </button>
+            </div>
+
+            <div className="segmented" aria-label="Reading pane width">
+              <button
+                className={readingPaneMode === 'narrow' ? 'is-active' : ''}
+                onClick={() => setReadingPaneMode('narrow')}
+                type="button"
+              >
+                Pane S
+              </button>
+              <button
+                className={readingPaneMode === 'balanced' ? 'is-active' : ''}
+                onClick={() => setReadingPaneMode('balanced')}
+                type="button"
+              >
+                Pane M
+              </button>
+              <button
+                className={readingPaneMode === 'wide' ? 'is-active' : ''}
+                onClick={() => setReadingPaneMode('wide')}
+                type="button"
+              >
+                Pane L
               </button>
             </div>
 
@@ -1033,8 +1110,8 @@ export function App() {
       <main
         className={
           layoutMode === 'two'
-            ? 'reader-grid reader-grid--enhanced reader-grid--two-column'
-            : 'reader-grid reader-grid--enhanced'
+            ? `reader-grid reader-grid--enhanced reader-grid--two-column reader-grid--pane-${readingPaneMode}`
+            : `reader-grid reader-grid--enhanced reader-grid--pane-${readingPaneMode}`
         }
       >
         <aside className="panel panel--nav">
