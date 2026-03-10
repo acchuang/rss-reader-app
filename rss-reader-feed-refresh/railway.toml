@@ -4,4 +4,4 @@ builder = "RAILPACK"
 [deploy]
 startCommand = "npm run worker:feed-refresh"
 restartPolicyType = "NEVER"
-cronSchedule = "*/30 * * * *"
+cronSchedule = "0 */2 * * *"

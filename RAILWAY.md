@@ -61,6 +61,10 @@ Create a second service from the same GitHub repo and configure:
 
 Railway cron jobs run in UTC and should terminate as soon as the task finishes. The worker in this repo closes the Postgres pool and exits after one pass.
 
+Current production cadence:
+
+- feed refresh cron runs every 120 minutes via `0 */2 * * *`
+
 ## Why the config path is explicit
 
 Railway's monorepo docs note that config-as-code does not automatically follow the service root directory for isolated monorepos. Set the absolute config path in service settings.

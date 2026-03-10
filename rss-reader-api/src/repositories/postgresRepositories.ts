@@ -379,13 +379,14 @@ class PostgresFeedRepository implements FeedRepository {
       `insert into feeds (
          feed_url, site_url, title, description, favicon_url, etag, last_modified, next_poll_at, poll_interval_minutes, status
        )
-       values ($1, $2, $3, $4, $5, $6, $7, now(), 30, 'active')
+       values ($1, $2, $3, $4, $5, $6, $7, now(), 120, 'active')
        on conflict (feed_url) do update
        set
          site_url = excluded.site_url,
          title = coalesce(excluded.title, feeds.title),
          description = coalesce(excluded.description, feeds.description),
          favicon_url = coalesce(excluded.favicon_url, feeds.favicon_url),
+         poll_interval_minutes = 120,
          next_poll_at = now(),
          status = 'active',
          last_error_message = null,

@@ -28,7 +28,7 @@ create table feeds (
   last_polled_at timestamptz,
   last_success_at timestamptz,
   next_poll_at timestamptz not null default now(),
-  poll_interval_minutes integer not null default 30,
+  poll_interval_minutes integer not null default 120,
   status feed_status not null default 'active',
   consecutive_failures integer not null default 0,
   last_error_message text,

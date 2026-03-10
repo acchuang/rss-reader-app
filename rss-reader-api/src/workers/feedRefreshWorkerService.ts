@@ -2,6 +2,9 @@ import { createHash } from 'node:crypto';
 
 import type { ServiceDependencies } from '../types/ports.js';
 
+const DEFAULT_REFRESH_INTERVAL_MINUTES = 120;
+const FAILURE_REFRESH_INTERVAL_MINUTES = 120;
+
 function nextPollIso(minutesFromNow: number): string {
   return new Date(Date.now() + minutesFromNow * 60_000).toISOString();
 }
@@ -69,7 +72,7 @@ export class FeedRefreshWorkerService {
       if (response.kind === 'not_modified') {
         await this.deps.feeds.markNotModified({
           feedId,
-          nextPollAt: nextPollIso(30)
+          nextPollAt: nextPollIso(DEFAULT_REFRESH_INTERVAL_MINUTES)
         });
 
         await this.deps.feeds.appendFetchLog({
@@ -130,7 +133,7 @@ export class FeedRefreshWorkerService {
         feedId,
         etag: response.etag ?? null,
         lastModified: response.lastModified ?? null,
-        nextPollAt: nextPollIso(30)
+        nextPollAt: nextPollIso(DEFAULT_REFRESH_INTERVAL_MINUTES)
       });
 
       await this.deps.feeds.appendFetchLog({
@@ -146,7 +149,7 @@ export class FeedRefreshWorkerService {
     } catch (error) {
       await this.deps.feeds.markRefreshFailure({
         feedId,
-        nextPollAt: nextPollIso(120),
+        nextPollAt: nextPollIso(FAILURE_REFRESH_INTERVAL_MINUTES),
         status: 'degraded',
         lastErrorMessage: error instanceof Error ? error.message : 'Unknown refresh failure'
       });
